@@ -49,7 +49,6 @@ https://youtu.be/eqjSAlvpqkQ
   
 ## Missing features
 
-* DISC 2 - floppy module
 * write support to SD-ROM module
 
 ## Installation
@@ -102,7 +101,13 @@ https://youtu.be/eqjSAlvpqkQ
 * Start playing WAV file. Basic games will print source code lines as they load
 * Enjoy the IQ 151 and the games :)
 
+### Disc2 floppy module use
 
+* change monitor to CPM (in code menu) and reset core
+* insert floppy [dsk floppy image](https://sinclair.wiki.zxnet.co.uk/wiki/DSK_format) to Floppy 0 (A)
+* if you are using Basic module bres Esc (break) key
+* type CFFF8 and press Enter to jump to floppy initialization routine
+* type 0 to boot from Floppy 0 (A)
 
 ## Links
 

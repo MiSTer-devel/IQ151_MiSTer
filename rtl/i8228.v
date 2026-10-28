@@ -45,9 +45,9 @@ wire iow  = ( ~status[0] & ~status[1] & ~status[2] & ~status[3] &  status[4] & ~
 wire inta = ( status[0] );
 
 // assigments to output pins
-assign memr_n            = ~( ~busen_n & memr );
+assign memr_n            = ~( ~busen_n &  dbin & memr );
 assign memw_n            = ~( ~busen_n & ~wr_n & memw );
-assign ior_n             = ~( ~busen_n & ior );
+assign ior_n             = ~( ~busen_n &  dbin & ior );
 assign iow_n             = ~( ~busen_n & ~wr_n & iow );
 assign inta_n            = ~( dbin & inta );
 assign databus_to_cpu    = (inta & inta_12V) ? 8'hFF : databus_to_8228; // RST 7 or system bus

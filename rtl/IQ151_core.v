@@ -5,7 +5,6 @@ module IQ151_core
    input  wire        clk_50M,          // 50MHz main clock
    input  wire        clk_sysDouble,    // double osc freq for grafik module
    input  wire        clk_sys,          // IQ151 system clock (for 8224) is 18.432MHz
-   input  wire        clk_disc2,        // 8MHz
 
    input  wire        reset_main,
    input  wire [10:0] ps2_key,
@@ -24,34 +23,35 @@ module IQ151_core
    output wire        beeper,
 
    input  wire        RAMSize,          // 0 = 32Kb, 1 = 64kB
+   input  wire        monitor,          // monitor(firmware) 
    input  wire        video,            // 0 = Video32, 1 = Video64
    input  wire        graphicsModuleOn,
    input  wire [1:0]  basicModule,      // 0 = None, 1 = Basic G, 2 = Basic 6, 3 = Amos ASM+PAS+PAS1
    input  wire        staperModuleOn,   // SD-Card interface
    input  wire        sestykModuleOn,   // serial interface
+   input  wire        floppyModule,     // 0 = None, 1 = Disc-2M
 
-   output wire        LED_YELLOW,
-   output wire        STAPE_LED,        // STAPER module activity LED
+   output wire        LED_FLOPPY,
+   output wire        LED_STAPE,        // STAPER module activity LED
 
    //SD-SPI - for Stapper Module (SD-Card interface)
    output wire        SD_SCK,
    output wire        SD_MOSI,
    input  wire        SD_MISO,
-   output wire        SD_CS
+   output wire        SD_CS,
 
-//    input wire   [1:0] img_mounted,
-//    input wire         img_readonly,
-//    input wire  [31:0] img_size,
-//    input wire   [1:0] density,
-//
-//    output wire [31:0] sd_lba,
-//    output wire  [1:0] sd_rd,
-//    output wire  [1:0] sd_wr,
-//    input  wire        sd_ack,
-//    input  wire  [8:0] sd_buff_addr,
-//    input  wire  [7:0] sd_buff_dout,
-//    output wire  [7:0] sd_buff_din,
-//    input  wire        sd_dout_strobe
+   // Floppy interface
+   input  wire  [1:0] img_mounted,
+   input  wire        img_readonly,
+   input  wire [31:0] img_size,
+   output wire [31:0] sd_lba,
+   output wire  [1:0] sd_rd,
+   output wire  [1:0] sd_wr,
+   input  wire  [1:0] sd_ack,
+   input  wire  [8:0] sd_buff_addr,
+   input  wire  [7:0] sd_buff_dout,
+   output wire  [7:0] sd_buff_din,
+   input  wire        sd_buff_wr
 );
 
 
@@ -186,9 +186,16 @@ assign databus_to_8228 =
             ~(CS59_n     | ior_n)                           ? PIC_D_out :        // IRQ 8259 chip
             ~(STAPE_CS_n | ior_n)                           ? StapeDout :        // Stapper module (=SD ROM)
 
-//             (DISC2_8272_CS      & ~ior_n)                  ? DISC2_DOut :       // Disc2 data from floppy
-//             (DISC2_EPROM_CS     & ~memr_n)                 ? DISC2_EPROM_DOut : // Disc2 data from EPROM with firmware
 
+             (DISC2_8272_CS & ~ior_n & DISC2ModuleOn)       ? DISC2_DOut : // Disc2 8272 data
+             (DISC2_SET & ~ior_n & DISC2ModuleOn)           ? DISC2_EPROM_MAPPED : // Is Disc2 Eprom mapped to memory space?
+             (DISC2_EPROM_CS & DISC2_EPROM_MAPPED &
+              ~memr_n & DISC2ModuleOn)                      ? DISC2_EPROM_DOut :   // Disc2 EPROM data
+
+
+//          (graphicsModuleOn & ~ior_n & (A[7:2] == 6'b1101_00)) ? DOutGrafik : // Grafik 8255 ... 0xD0-0xD3 ...not present on real HW!
+            (graphicsModuleOn & ~ior_n & (A[7:0] == 8'hD4))      ? DOutGrafik : // Grafik Video RAM ... 0xD4
+ 
             // video ... 0 = Video32, 1 = Video64  
             (~RAM_Video32_n & ~memr_n & ~video)             ? DOut32 :           // Video32 A=EC00
             (~RAM_Video64_n & ~memr_n &  video)             ? DOut64 :           // Video64 A=E800
@@ -318,7 +325,7 @@ wire       ibf_dout;         // data_out ready to be read by IQ (IBF = input buf
 reg  [1:0] stb_dout_buf;
 reg  [1:0] ack_din_buf;
 wire       STAPE_CS_n = ~(A[7:2] == 6'b1111_10) | ~staperModuleOn; // 0xF8 - 0xFB
-assign     STAPE_LED  = ~(STAPE_CS_n | (ior_n & iow_n));
+assign     LED_STAPE  = ~(STAPE_CS_n | (ior_n & iow_n));
 
 always @(posedge osc)
 begin
@@ -384,14 +391,25 @@ IQ_SDROM IQ_SDROM
 //  4kB ... 0xF0FF - 0xFFFF
 //
 wire CSEPROM = (A[15:12] == 4'b1111) | ~BootStrap_n; // 0xF000 - 0xFFFF ... EPROM access
-wire [7:0] data_EPROM_out;
+wire [7:0] data_EPROM_out = monitor ? data_EPROM_CPM_out : data_EPROM_std_out;
+wire [7:0] data_EPROM_CPM_out;
+wire [7:0] data_EPROM_std_out;
 
-dpram #(.ADDRWIDTH(12), .MEM_INIT_FILE("./rom/Monitor.mif")) myEPPROM
+dpram #(.ADDRWIDTH(12), .MEM_INIT_FILE("./rom/Monitor.mif")) myEPPROM_Std
 (
    .clock(clk_sys),
    .address_a(BootStrap_n ? A[11:0] : {1'b1, A[10:0]}),
    .wren_a(0),
-   .q_a(data_EPROM_out)
+   .q_a(data_EPROM_std_out)
+);
+
+
+dpram #(.ADDRWIDTH(12), .MEM_INIT_FILE("./rom/Monitor-cpm-030188.mif")) myEPPROM_CPM
+(
+   .clock(clk_sys),
+   .address_a(BootStrap_n ? A[11:0] : {1'b1, A[10:0]}),
+   .wren_a(0),
+   .q_a(data_EPROM_CPM_out)
 );
 
 
@@ -535,8 +553,8 @@ assign ZS_n  = (ZS32_n  | Video32_Off) & (ZS64_n  | Video64_Off);
 assign ZR_n  = (ZR32_n  | Video32_Off) & (ZR64_n  | Video64_Off);
 
 assign Zat_n = (ZAT32_n  | Video32_Off) & (ZAT64_n  | Video64_Off);
-   
-   
+
+
 wire NRDY32_n;
 wire NRDY64_n;
 wire NRDY_grafik_n;
@@ -590,7 +608,6 @@ grafik grafik
    .A(A),
    .DIn(databus_from_cpu),
    .DOut(DOutGrafik),
-   .video(video),
    .ior_n(ior_n | ~graphicsModuleOn),
    .iow_n(iow_n | ~graphicsModuleOn),
    .NRDY_n(NRDY_grafik_n),
@@ -685,60 +702,82 @@ i8251 Sestyk_8251
 
 //-------------------------------------- DISC2 Module ---------------------------------------------------------------
 //
-wire DISC2_8272_CS  = A[15:9] == 7'b1010_101;   // 0xAA - 0xAB
-wire DISC2_SET      = A[15:8] == 8'b1010_1100;  // 0xAC      ???????????????????????????????????????????????????????????????????????????
-//wire DISC2_EPROM_CS = A[15:11] == 5'b1010_0;    // 0xA0 - 0xA7 ... location based on 74188 from sapi.cz
-wire DISC2_EPROM_CS = A[15:11] == 5'b1110_0;    // 0xA0 - 0xA7 ... location based IQ151 java emulator from Omikron88
+wire DISC2ModuleOn  = floppyModule;
+wire DISC2_8272_CS  = ((A[15:9]  == 7'b1010_101)  & DISC2ModuleOn);  // 0xAA - 0xAB     ... i8272 R/W
+wire DISC2_SET      = ((A[15:8]  == 8'b1010_1100) & DISC2ModuleOn);  // 0xAC            ... Eprom map to adress space On/Off
+wire DISC2_EPROM_CS = ((A[15:11] == 5'b1110_0)    & DISC2ModuleOn);  // 0xE000 - 0xE7FF ... Eprom address space
 
-
-wire [7:0] DISC2_DOut;// = (fdc_sel & ~ior) ? u765_dout : 8'hFF;
+wire [7:0] DISC2_DOut;
 wire [7:0] DISC2_EPROM_DOut;
+reg        DISC2_EPROM_MAPPED;
+wire       DISC2_EPROM_MAP = DISC2_SET & ~iow_n;
 
-//dpram #(.ADDRWIDTH(14), .MEM_INIT_FILE("./rom/Disc2.mif")) myEPPROM_Disc2
-//(
-//   .clock(clk_sys),
-//   .address_a(A[13:0]),
-//   .wren_a(0),
-//   .q_a(DISC2_EPROM_DOut)
-//); 
-//
-//wire motor = 1;
-//    reg  [1:0] u765_ready = 0;
-//    always @(posedge clk_sys) if(img_mounted[0]) u765_ready[0] <= |img_size;
-//    always @(posedge clk_sys) if(img_mounted[1]) u765_ready[1] <= |img_size;
-//
-//    wire fdc_int;
-//    u765 u765
-//    (
-//        .reset(INIT),
-//
-//        .clk_sys(clk_sys),
-//        .ce(clk_disc2),
-//        .a0(A[0]),
-//        .ready(u765_ready),
-//        .motor({motor,motor}),
-//        .available(2'b11),
-//        .nRD(~DISC2_8272_CS | ior_n), 
-//        .nWR(~DISC2_8272_CS | iow_n),
-//        .din(databus_from_8228),
-//        .dout(DISC2_DOut),
-//        //.int_out(fdc_int),
-//        //.tc(tc),
-//        //.density(density),
-//        //.activity_led(LED),
-//
-//        .img_mounted(img_mounted),
-//        .img_size(img_size[31:0]),
-//        .img_wp(img_readonly),
-//        .sd_lba(sd_lba),
-//        .sd_rd(sd_rd),
-//        .sd_wr(sd_wr),
-//        .sd_ack(sd_ack),
-//        .sd_buff_addr(sd_buff_addr),
-//        .sd_buff_dout(sd_buff_dout),
-//        .sd_buff_din(sd_buff_din),
-//        .sd_buff_wr(sd_dout_strobe)
-//    );
+assign LED_FLOPPY = (DISC2_8272_CS & (~ior_n | ~iow_n));
 
+always @(posedge clk_sys)
+begin
+   if (reset_main)
+      DISC2_EPROM_MAPPED <= 1'b0;
+   else if (DISC2_SET & ~iow_n)
+      DISC2_EPROM_MAPPED <= databus_from_8228[0];
+end
+
+
+dpram #(.ADDRWIDTH(11), .MEM_INIT_FILE("./rom/Disc2.mif")) myEPPROM_Disc2
+(
+   .clock(clk_sys),
+   .address_a(A[10:0]),
+   .wren_a(0),
+   .q_a(DISC2_EPROM_DOut)
+); 
+
+
+reg [1:0] fdd_ready;
+
+always @(posedge clk_sys)
+begin
+   if (img_mounted[0]) fdd_ready[0] <= |img_size;
+   if (img_mounted[1]) fdd_ready[1] <= |img_size;
+end
+
+
+reg [1:0] ce_cnt = 0;
+reg       ce_u765;
+always @(posedge clk_sys) begin
+   ce_cnt  <= ce_cnt + 1'd1;
+   ce_u765 <= (ce_cnt == 2'd0);     // 18,432 MHz / 4 = 4,608 MHz
+end
+
+
+u765  #(.CYCLES(20'd4608)) DISC2_i8272
+(
+   .reset(reset_main),
+
+   .clk_sys(clk_sys),
+   .ce(ce_u765),
+   .fast(1),
+
+   .a0(A[0]),
+   .ready(2'b11),
+   .motor(2'b11),
+   .available(2'b11),
+   .nRD(~DISC2_8272_CS | ior_n),
+   .nWR(~DISC2_8272_CS | iow_n),
+   .din(databus_from_8228),
+   .dout(DISC2_DOut),
+
+   .img_mounted(img_mounted),
+   .img_size(img_size[31:0]),
+   .img_wp(img_readonly),
+
+   .sd_lba(sd_lba),
+   .sd_rd(sd_rd),
+   .sd_wr(sd_wr),
+   .sd_ack(|sd_ack),
+   .sd_buff_addr(sd_buff_addr),
+   .sd_buff_dout(sd_buff_dout),
+   .sd_buff_din(sd_buff_din),
+   .sd_buff_wr(sd_buff_wr)
+);
 
 endmodule // IQ151G

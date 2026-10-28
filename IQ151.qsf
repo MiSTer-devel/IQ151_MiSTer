@@ -40,7 +40,7 @@
 
 # Project-Wide Assignments
 # ========================
-set_global_assignment -name LAST_QUARTUS_VERSION "17.1.0 Lite Edition"
+set_global_assignment -name LAST_QUARTUS_VERSION "17.0.2 Lite Edition"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name NUM_PARALLEL_PROCESSORS ALL
 set_global_assignment -name SMART_RECOMPILE ON
@@ -427,6 +427,7 @@ set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 set_global_assignment -name VERILOG_FILE rtl/IQ151_core.v
 set_global_assignment -name SYSTEMVERILOG_FILE IQ151.sv
 set_global_assignment -name VERILOG_FILE rtl/grafik.v
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/u765.sv
 set_global_assignment -name VHDL_FILE IQ_SDROM/Peripherals/simple_uart.vhd
 set_global_assignment -name VHDL_FILE IQ_SDROM/Peripherals/spi.vhd
 set_global_assignment -name VHDL_FILE IQ_SDROM/ZPUFlex/zpupkg.vhd

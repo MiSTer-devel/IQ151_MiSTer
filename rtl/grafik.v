@@ -6,7 +6,6 @@ module grafik(
    input  wire [15:0] A,
    input  wire  [7:0] DIn,
    output wire  [7:0] DOut,
-   input wire         video,     // video ... 0 = Video32, 1 = Video64 * for video32 timing fix
 
    input  wire        ZS_n,      // zatmění stránky = Vertical Blank
    input  wire        ZR_n,      // zatmění řádky = Horizontal Blank
@@ -21,8 +20,8 @@ module grafik(
 );
 
 
-wire CS_n_8255 = ~(A[7:2] == 6'b1101_00);   // 0xD0 - 0xD3 ... CPU set 8255
-wire S1_n      = ~(A == 16'hD4_D4);         // 0xD4        ... CPU read/write data from/to module grafik
+wire CS_n_8255 = ~(A[7:2] == 6'b1101_00);   // 0xD0 - 0xD3 ... CPU write to 8255
+wire S1_n      = ~(A == 16'hD4_D4);         // 0xD4        ... CPU read/write data from/to module grafik RA
 
 reg         HCK;  // IC24A ..... derived clock signal
 reg         Q0;   // IC23A ..... control signal
@@ -133,7 +132,7 @@ i8255 grafik8255
    .PCHisInput(PCHisInput),
    .D_In(DIn),
 
-    .clk(phi2),
+   .clk(phi2),
    .RD_n(1'b1), // never read
    .WR_n(iow_n),
    .A(A[1:0]),
@@ -144,10 +143,10 @@ i8255 grafik8255
 //---------------------------------------------------------------
 //
 wire  [7:0] data_VRAM_out;
-assign      DOut           = data_VRAM_out;
+assign      DOut           = data_VRAM_outD; //data_VRAM_out;
 wire [13:0] CPUAddr        = {PB[7:0], PA[5:0]} ;
 wire [13:0] memAddr        =  gWR_n ? VideoAddr : CPUAddr;
-wire        WRx            = ~gWR_n & Q0 & ~Q1 & Q2; // & Q1 & ~Q0 pridano pro zkraceni delky intervalu zapisu!
+wire        WRx            = ~gWR_n & Q0 & ~Q1 & Q2 & ior_n; // & Q1 & ~Q0 pridano pro zkraceni delky intervalu zapisu!
 
 // 16kB RAM
 dpram #(.ADDRWIDTH(14)) videoRam 
